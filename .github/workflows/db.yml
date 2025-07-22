@@ -39,3 +39,26 @@ jobs:
           commit_message: Update databases
           commit_user_email: github-actions@github.com
           commit_author: GitHub Actions <github-actions@github.com>
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rclone
+      - name: Configure rclone for Cloudflare R2
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "[r2]" > ~/.config/rclone/rclone.conf
+          echo "type = s3" >> ~/.config/rclone/rclone.conf
+          echo "provider = Cloudflare" >> ~/.config/rclone/rclone.conf
+          echo "access_key_id = ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}" >> ~/.config/rclone/rclone.conf
+          echo "secret_access_key = ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}" >> ~/.config/rclone/rclone.conf
+          echo "endpoint = https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" >> ~/.config/rclone/rclone.conf
+      - name: Check if cache directory exists
+        run: |
+          if [ ! -d "$HOME/.cache/nix" ]; then
+            echo "Directory $HOME/.cache/nix does not exist. Skipping sync."
+            exit 0
+          fi
+      - name: Sync built cache to R2 using rclone
+        if: exists('$HOME/.cache/nix')
+        run: |
+          rclone sync "$HOME/.cache/nix" r2:nix-cache
