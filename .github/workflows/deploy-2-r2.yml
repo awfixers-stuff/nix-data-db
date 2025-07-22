@@ -27,7 +27,14 @@ jobs:
           echo "access_key_id = ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}" >> ~/.config/rclone/rclone.conf
           echo "secret_access_key = ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}" >> ~/.config/rclone/rclone.conf
           echo "endpoint = https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" >> ~/.config/rclone/rclone.conf
+          - name: Check if nix-cache directory exists
+            run: |
+              if [ ! -d "$GITHUB_WORKSPACE/nix-data-db" ]; then
+                echo "Directory $GITHUB_WORKSPACE/nix-data-db does not exist. Skipping sync."
+                exit 0
+              fi
 
-      - name: Sync to R2 using rsync-like rclone
-        run: |
-          rclone sync "$GITHUB_WORKSPACE/nix-cache" r2:nix-cache
+          - name: Sync to R2 using rsync-like rclone
+            if: exists('${{ github.workspace }}/nix-data-db')
+            run: |
+              rclone sync "$GITHUB_WORKSPACE/nix-data-db r2:nix-cache
