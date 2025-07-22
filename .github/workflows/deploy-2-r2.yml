@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: ${{ github.workspace }}
 
       - name: Install rclone
         run: |
@@ -28,4 +30,4 @@ jobs:
 
       - name: Sync to R2 using rsync-like rclone
         run: |
-          rclone sync ./nix-cache r2:nix-cache
+          rclone sync "$GITHUB_WORKSPACE/nix-cache" r2:nix-cache
