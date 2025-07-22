@@ -53,12 +53,14 @@ jobs:
           echo "secret_access_key = ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}" >> ~/.config/rclone/rclone.conf
           echo "endpoint = https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" >> ~/.config/rclone/rclone.conf
       - name: Check if cache directory exists
+        id: check_cache_dir
         run: |
-          if [ ! -d "$HOME/.cache/nix" ]; then
-            echo "Directory $HOME/.cache/nix does not exist. Skipping sync."
-            exit 0
+          if [ -d "$HOME/.cache/nix" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
           fi
       - name: Sync built cache to R2 using rclone
-        if: exists('$HOME/.cache/nix')
+        if: steps.check_cache_dir.outputs.exists == 'true'
         run: |
           rclone sync "$HOME/.cache/nix" r2:nix-cache
