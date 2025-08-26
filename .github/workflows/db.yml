@@ -4,11 +4,17 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 * * * *"
+permissions:
+  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message || '', '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@v4
@@ -19,24 +25,24 @@ jobs:
           name: awfixeros
       - name: Create databases
         run: |
+          set -euo pipefail
           sleep $((RANDOM % 60))
-          for Line in $(cat versions)
-          do
-            PREV_VERSION=$(cat $Line/nixpkgs.ver)
-            RUST_LOG=nix_data_generator=trace nix develop --command -- nix-data-generator -v $Line --src $Line 1>&2
-            NEW_VERSION=$(cat $Line/nixpkgs.ver)
+          while IFS= read -r Line; do
+            PREV_VERSION=$(cat "$Line/nixpkgs.ver")
+            RUST_LOG=nix_data_generator=trace nix develop --command -- nix-data-generator -v "$Line" --src "$Line" 1>&2
+            NEW_VERSION=$(cat "$Line/nixpkgs.ver")
             if [ "$PREV_VERSION" != "$NEW_VERSION" ]; then
               if [ -f "$Line/nixpkgs.db" ]; then
-                brotli ./$Line/nixpkgs.db -o ./$Line/nixpkgs.db.br -v -f 1>&2
+                nix develop --command -- brotli "./$Line/nixpkgs.db" -o "./$Line/nixpkgs.db.br" -v -f 1>&2
               fi
               if [ -f "$Line/nixpkgs_versions.db" ]; then
-                brotli ./$Line/nixpkgs_versions.db -o ./$Line/nixpkgs_versions.db.br -v -f 1>&2
+                nix develop --command -- brotli "./$Line/nixpkgs_versions.db" -o "./$Line/nixpkgs_versions.db.br" -v -f 1>&2
               fi
             fi
-          done
+          done < versions
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: Update databases
+          commit_message: Update databases [skip ci]
           commit_user_email: github-actions@github.com
           commit_author: GitHub Actions <github-actions@github.com>
       - name: Install rclone
@@ -52,15 +58,15 @@ jobs:
           echo "access_key_id = ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}" >> ~/.config/rclone/rclone.conf
           echo "secret_access_key = ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}" >> ~/.config/rclone/rclone.conf
           echo "endpoint = https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" >> ~/.config/rclone/rclone.conf
-      - name: Check if cache directory exists
-        id: check_cache_dir
+      - name: Check if .br artifacts exist
+        id: check_br
         run: |
-          if [ -d "$HOME/.cache/nix" ]; then
+          if find . -type f -name "*.db.br" -print -quit | grep -q .; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
-      - name: Sync built cache to R2 using rclone
-        if: steps.check_cache_dir.outputs.exists == 'true'
+      - name: Sync .br artifacts to R2 using rclone
+        if: steps.check_br.outputs.exists == 'true'
         run: |
-          rclone sync "$HOME/.cache/nix" r2:nix-cache
+          rclone sync . r2:nix-cache --include "**/*.db.br" --exclude "*"
